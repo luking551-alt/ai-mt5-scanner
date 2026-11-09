@@ -1,0 +1,21 @@
+[
+  {
+    "email": "trader321@gmail.com",
+    "password": "$2b$10$gEai8IWlBVrrRiZ3yXlZ7ez1hPsxtlpivYGhqvuEakovZb65WLbja",
+    "status": "pro"
+  },
+  {
+    "email": "admin@scanner.com",
+    "password": "$2b$10$z/9gx/ntvNZSRbhu1yd85OStKDhpMqzg5DyuJaKmxiaadPMR4GgKm",
+    "status": "admin",
+    "dailyQuota": 3,
+    "lastAnalysisDate": null
+  },
+  {
+    "email": "indihome@gmail.com",
+    "password": "$2b$10$cZ08BIXS/.6Pnm3z27EhW.Jile.h2soryjh4OH5zXsELEYRxx3DQ6",
+    "status": "free",
+    "dailyQuota": 3,
+    "lastAnalysisDate": null
+  }
+]
