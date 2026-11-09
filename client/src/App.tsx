@@ -118,9 +118,8 @@ export default function App() {
 
       {isUpgradeOpen && (
         <UpgradeModal 
-          onClose={() => setIsUpgradeOpen(false)} 
-          onSuccess={() => setIsUpgradeOpen(false)} 
-        />
+  onClose={() => setIsUpgradeOpen(false)} 
+/>
       )}
     </div>
   );

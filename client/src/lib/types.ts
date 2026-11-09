@@ -5,9 +5,9 @@ export type {
   AnalyzeErrorResponse,
   SignalType,
   Timeframe,
-} from '@shared/signal.schema';
+} from './signal.schema';
 
 export {
   AnalysisResultSchema,
   AnalyzeResponseSchema,
-} from '@shared/signal.schema';
+} from './signal.schema';
