@@ -19,7 +19,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     const endpoint = isLogin ? '/api/login' : '/api/register';
 
     try {
-      const response = await axios.post(`http://localhost:3001${endpoint}`, { email, password });
+      const response = await axios.post(`/api${endpoint}`, { email, password });
       if (isLogin) {
         onLoginSuccess(response.data.token);
       } else {

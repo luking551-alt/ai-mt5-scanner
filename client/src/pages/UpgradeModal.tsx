@@ -15,7 +15,7 @@ export default function UpgradeModal({ onClose }: UpgradeModalProps) {
     setLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
-      await axios.post('http://localhost:3001/api/request-upgrade', {}, {
+      await axios.post('/api/api/request-upgrade', {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setIsSuccess(true);

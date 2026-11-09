@@ -8,7 +8,7 @@ export default function Admin() {
   const fetchPending = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://localhost:3001/api/admin/pending', {
+      const response = await axios.get('/api/api/admin/pending', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPending(response.data.pending);
@@ -24,7 +24,7 @@ export default function Admin() {
   const handleApprove = async (email: string) => {
     try {
       const token = localStorage.getItem('auth_token');
-      await axios.post('http://localhost:3001/api/admin/approve', { targetEmail: email }, {
+      await axios.post('/api/api/admin/approve', { targetEmail: email }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       alert(`User ${email} berhasil di-upgrade ke PRO!`);

@@ -9,7 +9,7 @@ export default function History() {
     const fetchHistory = async () => {
       try {
         const token = localStorage.getItem('auth_token');
-        const response = await axios.get('http://localhost:3001/api/history', {
+        const response = await axios.get('/api/api/history', {
           headers: { Authorization: `Bearer ${token}` }
         });
         setHistory(response.data.history);
