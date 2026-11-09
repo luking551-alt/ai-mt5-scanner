@@ -62,18 +62,14 @@ app.post('/api/request-upgrade', (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
-    
     const decoded: any = jwt.verify(token, JWT_SECRET);
     const users = JSON.parse(fs.readFileSync(usersFilePath, 'utf-8'));
     const userIndex = users.findIndex((u: any) => u.email === decoded.email);
-    
     if (userIndex === -1) return res.status(404).json({ error: 'User tidak ditemukan' });
-    
     users[userIndex].status = 'pending';
     fs.writeFileSync(usersFilePath, JSON.stringify(users, null, 2));
-    
-    res.json({ ok: true, message: 'Permintaan dikirim. Admin akan memverifikasi pembayaran Anda.' });
-  } catch (error) { res.status(500).json({ error: 'Gagal memproses permintaan' }); }
+    res.json({ ok: true, message: 'Permintaan dikirim.' });
+  } catch (error) { res.status(500).json({ error: 'Gagal' }); }
 });
 
 app.get('/api/admin/pending', (req, res) => {
@@ -81,13 +77,11 @@ app.get('/api/admin/pending', (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     const decoded: any = jwt.verify(token, JWT_SECRET);
-    
     if (decoded.status !== 'admin') return res.status(403).json({ error: 'Akses ditolak' });
-    
     const users = JSON.parse(fs.readFileSync(usersFilePath, 'utf-8'));
     const pendingUsers = users.filter((u: any) => u.status === 'pending').map((u: any) => ({ email: u.email }));
     res.json({ ok: true, pending: pendingUsers });
-  } catch (error) { res.status(500).json({ error: 'Gagal mengambil data' }); }
+  } catch (error) { res.status(500).json({ error: 'Gagal' }); }
 });
 
 app.post('/api/admin/approve', (req, res) => {
@@ -96,17 +90,14 @@ app.post('/api/admin/approve', (req, res) => {
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     const decoded: any = jwt.verify(token, JWT_SECRET);
     if (decoded.status !== 'admin') return res.status(403).json({ error: 'Akses ditolak' });
-
     const { targetEmail } = req.body;
     const users = JSON.parse(fs.readFileSync(usersFilePath, 'utf-8'));
     const userIndex = users.findIndex((u: any) => u.email === targetEmail);
-    
     if (userIndex === -1) return res.status(404).json({ error: 'User tidak ditemukan' });
-    
     users[userIndex].status = 'pro';
     fs.writeFileSync(usersFilePath, JSON.stringify(users, null, 2));
-    res.json({ ok: true, message: 'User berhasil di-upgrade ke PRO' });
-  } catch (error) { res.status(500).json({ error: 'Gagal approve' }); }
+    res.json({ ok: true, message: 'User di-upgrade ke PRO' });
+  } catch (error) { res.status(500).json({ error: 'Gagal' }); }
 });
 
 app.get('/api/history', (req, res) => {
@@ -117,7 +108,7 @@ app.get('/api/history', (req, res) => {
     const history = JSON.parse(fs.readFileSync(historyFilePath, 'utf-8'));
     const userHistory = history.filter((h: any) => h.email === decoded.email);
     res.json({ ok: true, history: userHistory.reverse() });
-  } catch (error) { res.status(500).json({ error: 'Gagal mengambil history' }); }
+  } catch (error) { res.status(500).json({ error: 'Gagal' }); }
 });
 
 app.post('/api/analyze', upload, async (req, res) => {
@@ -128,23 +119,19 @@ app.post('/api/analyze', upload, async (req, res) => {
     if (token) {
       try { const decoded: any = jwt.verify(token, JWT_SECRET); userEmail = decoded.email; userStatus = decoded.status; } catch (e) {}
     }
-
     const users = JSON.parse(fs.readFileSync(usersFilePath, 'utf-8'));
     const userIndex = users.findIndex((u: any) => u.email === userEmail);
     
     if (userStatus === 'free' && userIndex !== -1) {
       const today = new Date().toISOString().split('T')[0];
       let user = users[userIndex];
-
       if (user.lastAnalysisDate !== today) {
         users[userIndex].dailyQuota = 3;
         users[userIndex].lastAnalysisDate = today;
       }
-
       if (users[userIndex].dailyQuota <= 0) {
-        return res.status(403).json({ ok: false, error: 'QUOTA_EXCEEDED', message: 'Kuota gratis habis. Silakan Upgrade ke PRO!' });
+        return res.status(403).json({ ok: false, error: 'QUOTA_EXCEEDED', message: 'Kuota gratis habis.' });
       }
-
       users[userIndex].dailyQuota -= 1;
       fs.writeFileSync(usersFilePath, JSON.stringify(users, null, 2));
     }
