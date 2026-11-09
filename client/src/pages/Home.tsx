@@ -57,7 +57,7 @@ export default function Home({ onUpgradeClick }: HomeProps) {
 
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.post('http://localhost:3001/api/analyze', formData, {
+      const response = await axios.post('/api/api/analyze', formData, {
         headers: { 
           'Content-Type': 'multipart/form-data',
           'Authorization': `Bearer ${token}`

@@ -1,0 +1,206 @@
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import multer from 'multer';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import fs from 'fs';
+import path from 'path';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+
+dotenv.config();
+
+const app = express();
+
+// Middleware
+app.use(cors({ origin: '*' })); // Izinkan semua origin untuk sementara di Vercel
+app.use(express.json());
+
+// Setup Gemini AI
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+
+// Setup Multer
+const upload = multer({ storage: multer.memoryStorage() }).fields([
+  { name: 'imageH1', maxCount: 1 },
+  { name: 'imageM5', maxCount: 1 }
+]);
+
+const JWT_SECRET = 'rahasia-super-aman-123'; 
+
+// --- PENTING UNTUK VERCEL ---
+// Vercel tidak mengizinkan kita menulis file (fs.writeFileSync) ke folder proyek.
+// Jadi, kita gunakan folder sementara /tmp untuk database JSON di serverless.
+const usersFilePath = path.join('/tmp', 'users.json');
+const historyFilePath = path.join('/tmp', 'history.json');
+
+if (!fs.existsSync(usersFilePath)) fs.writeFileSync(usersFilePath, JSON.stringify([]));
+if (!fs.existsSync(historyFilePath)) fs.writeFileSync(historyFilePath, JSON.stringify([]));
+
+// --- ENDPOINT REGISTER ---
+app.post('/api/register', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email dan password wajib diisi' });
+    const users = JSON.parse(fs.readFileSync(usersFilePath, 'utf-8'));
+    if (users.find((u: any) => u.email === email)) return res.status(400).json({ error: 'Email sudah terdaftar' });
+    
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const status = email === 'admin@scanner.com' ? 'admin' : 'free';
+    
+    users.push({ email, password: hashedPassword, status, dailyQuota: 3, lastAnalysisDate: null });
+    fs.writeFileSync(usersFilePath, JSON.stringify(users, null, 2));
+    
+    res.json({ ok: true, message: 'Registrasi berhasil! Silakan login.' });
+  } catch (error) { res.status(500).json({ error: 'Terjadi kesalahan pada server' }); }
+});
+
+// --- ENDPOINT LOGIN ---
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const users = JSON.parse(fs.readFileSync(usersFilePath, 'utf-8'));
+    const user = users.find((u: any) => u.email === email);
+    
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ error: 'Email atau password salah' });
+    }
+    
+    const token = jwt.sign({ email: user.email, status: user.status || 'free' }, JWT_SECRET, { expiresIn: '1d' });
+    res.json({ ok: true, token, message: 'Login berhasil!' });
+  } catch (error) { res.status(500).json({ error: 'Terjadi kesalahan pada server' }); }
+});
+
+// --- ENDPOINT UPGRADE (Minta Verifikasi) ---
+app.post('/api/request-upgrade', (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+    
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const users = JSON.parse(fs.readFileSync(usersFilePath, 'utf-8'));
+    const userIndex = users.findIndex((u: any) => u.email === decoded.email);
+    
+    if (userIndex === -1) return res.status(404).json({ error: 'User tidak ditemukan' });
+    
+    users[userIndex].status = 'pending';
+    fs.writeFileSync(usersFilePath, JSON.stringify(users, null, 2));
+    
+    res.json({ ok: true, message: 'Permintaan dikirim. Admin akan memverifikasi pembayaran Anda.' });
+  } catch (error) { res.status(500).json({ error: 'Gagal memproses permintaan' }); }
+});
+
+// --- ENDPOINT ADMIN (Melihat Pending & Approve) ---
+app.get('/api/admin/pending', (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    
+    if (decoded.status !== 'admin') return res.status(403).json({ error: 'Akses ditolak' });
+    
+    const users = JSON.parse(fs.readFileSync(usersFilePath, 'utf-8'));
+    const pendingUsers = users.filter((u: any) => u.status === 'pending').map((u: any) => ({ email: u.email }));
+    res.json({ ok: true, pending: pendingUsers });
+  } catch (error) { res.status(500).json({ error: 'Gagal mengambil data' }); }
+});
+
+app.post('/api/admin/approve', (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    if (decoded.status !== 'admin') return res.status(403).json({ error: 'Akses ditolak' });
+
+    const { targetEmail } = req.body;
+    const users = JSON.parse(fs.readFileSync(usersFilePath, 'utf-8'));
+    const userIndex = users.findIndex((u: any) => u.email === targetEmail);
+    
+    if (userIndex === -1) return res.status(404).json({ error: 'User tidak ditemukan' });
+    
+    users[userIndex].status = 'pro';
+    fs.writeFileSync(usersFilePath, JSON.stringify(users, null, 2));
+    res.json({ ok: true, message: 'User berhasil di-upgrade ke PRO' });
+  } catch (error) { res.status(500).json({ error: 'Gagal approve' }); }
+});
+
+// --- ENDPOINT HISTORY ---
+app.get('/api/history', (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+    const decoded: any = jwt.verify(token, JWT_SECRET);
+    const history = JSON.parse(fs.readFileSync(historyFilePath, 'utf-8'));
+    const userHistory = history.filter((h: any) => h.email === decoded.email);
+    res.json({ ok: true, history: userHistory.reverse() });
+  } catch (error) { res.status(500).json({ error: 'Gagal mengambil history' }); }
+});
+
+// --- ENDPOINT ANALYZE ---
+app.post('/api/analyze', upload, async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    let userEmail = 'guest';
+    let userStatus = 'free';
+    if (token) {
+      try { const decoded: any = jwt.verify(token, JWT_SECRET); userEmail = decoded.email; userStatus = decoded.status; } catch (e) {}
+    }
+
+    // Cek Kuota Gratis
+    const users = JSON.parse(fs.readFileSync(usersFilePath, 'utf-8'));
+    const userIndex = users.findIndex((u: any) => u.email === userEmail);
+    
+    if (userStatus === 'free' && userIndex !== -1) {
+      const today = new Date().toISOString().split('T')[0];
+      let user = users[userIndex];
+
+      if (user.lastAnalysisDate !== today) {
+        users[userIndex].dailyQuota = 3;
+        users[userIndex].lastAnalysisDate = today;
+      }
+
+      if (users[userIndex].dailyQuota <= 0) {
+        return res.status(403).json({ ok: false, error: 'QUOTA_EXCEEDED', message: 'Kuota gratis habis. Silakan Upgrade ke PRO!' });
+      }
+
+      users[userIndex].dailyQuota -= 1;
+      fs.writeFileSync(usersFilePath, JSON.stringify(users, null, 2));
+    }
+
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    if (!files || !files['imageH1'] || !files['imageM5']) {
+      return res.status(400).json({ ok: false, error: 'INVALID_FILE', message: 'Gambar wajib diunggah' });
+    }
+
+    const imageH1 = { inlineData: { data: files['imageH1'][0].buffer.toString('base64'), mimeType: files['imageH1'][0].mimetype } };
+    const imageM5 = { inlineData: { data: files['imageM5'][0].buffer.toString('base64'), mimeType: files['imageM5'][0].mimetype } };
+
+    const prompt = `
+      Kamu adalah analis trading SCALPING profesional. Gunakan strategi Top-Down Analysis.
+      Gambar 1: H1/H4 (Tren). Gambar 2: M5/M15 (Entry).
+      ATURAN KETAT: Jangan ambil BUY jika tren H1 turun, jangan ambil SELL jika tren H1 naik. SL tipis, TP realistis maksimal 1:1.5.
+      Jika tren bertolak belakang, berikan "NO_TRADE".
+      Berikan jawaban HANYA format JSON:
+      { "signal": "BUY"|"SELL"|"NO_TRADE", "pair": "BTCUSD", "timeframe": "H1 + M5", "entry": 0, "sl": 0, "tp1": 0, "tp2": 0, "confidence": 0, "reason": "", "warnings": [] }
+    `;
+
+    const result = await model.generateContent([prompt, imageH1, imageM5]);
+    const cleanJson = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+    const parsedData = JSON.parse(cleanJson);
+
+    const history = JSON.parse(fs.readFileSync(historyFilePath, 'utf-8'));
+    history.push({
+      id: Date.now().toString(), email: userEmail, date: new Date().toISOString(),
+      imageM5: files['imageM5'][0].buffer.toString('base64'), mimeType: files['imageM5'][0].mimetype, result: parsedData
+    });
+    fs.writeFileSync(historyFilePath, JSON.stringify(history, null, 2));
+
+    res.json({ ok: true, result: parsedData });
+  } catch (error) {
+    console.error('Error AI:', error);
+    res.status(500).json({ ok: false, error: 'AI_ERROR', message: 'Gagal menganalisis gambar' });
+  }
+});
+
+// --- EXPORT UNTUK VERCEL ---
+export default app;
