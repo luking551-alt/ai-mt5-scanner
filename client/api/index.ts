@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import multer from 'multer';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import fs from 'fs';
@@ -8,36 +7,25 @@ import path from 'path';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
-dotenv.config();
-
 const app = express();
-
-// Middleware
-app.use(cors({ origin: '*' })); // Izinkan semua origin untuk sementara di Vercel
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-// Setup Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-// Setup Multer
 const upload = multer({ storage: multer.memoryStorage() }).fields([
   { name: 'imageH1', maxCount: 1 },
   { name: 'imageM5', maxCount: 1 }
 ]);
 
 const JWT_SECRET = 'rahasia-super-aman-123'; 
-
-// --- PENTING UNTUK VERCEL ---
-// Vercel tidak mengizinkan kita menulis file (fs.writeFileSync) ke folder proyek.
-// Jadi, kita gunakan folder sementara /tmp untuk database JSON di serverless.
 const usersFilePath = path.join('/tmp', 'users.json');
 const historyFilePath = path.join('/tmp', 'history.json');
 
 if (!fs.existsSync(usersFilePath)) fs.writeFileSync(usersFilePath, JSON.stringify([]));
 if (!fs.existsSync(historyFilePath)) fs.writeFileSync(historyFilePath, JSON.stringify([]));
 
-// --- ENDPOINT REGISTER ---
 app.post('/api/register', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -55,7 +43,6 @@ app.post('/api/register', async (req, res) => {
   } catch (error) { res.status(500).json({ error: 'Terjadi kesalahan pada server' }); }
 });
 
-// --- ENDPOINT LOGIN ---
 app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -71,7 +58,6 @@ app.post('/api/login', async (req, res) => {
   } catch (error) { res.status(500).json({ error: 'Terjadi kesalahan pada server' }); }
 });
 
-// --- ENDPOINT UPGRADE (Minta Verifikasi) ---
 app.post('/api/request-upgrade', (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -90,7 +76,6 @@ app.post('/api/request-upgrade', (req, res) => {
   } catch (error) { res.status(500).json({ error: 'Gagal memproses permintaan' }); }
 });
 
-// --- ENDPOINT ADMIN (Melihat Pending & Approve) ---
 app.get('/api/admin/pending', (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -124,7 +109,6 @@ app.post('/api/admin/approve', (req, res) => {
   } catch (error) { res.status(500).json({ error: 'Gagal approve' }); }
 });
 
-// --- ENDPOINT HISTORY ---
 app.get('/api/history', (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -136,7 +120,6 @@ app.get('/api/history', (req, res) => {
   } catch (error) { res.status(500).json({ error: 'Gagal mengambil history' }); }
 });
 
-// --- ENDPOINT ANALYZE ---
 app.post('/api/analyze', upload, async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -146,7 +129,6 @@ app.post('/api/analyze', upload, async (req, res) => {
       try { const decoded: any = jwt.verify(token, JWT_SECRET); userEmail = decoded.email; userStatus = decoded.status; } catch (e) {}
     }
 
-    // Cek Kuota Gratis
     const users = JSON.parse(fs.readFileSync(usersFilePath, 'utf-8'));
     const userIndex = users.findIndex((u: any) => u.email === userEmail);
     
@@ -175,14 +157,7 @@ app.post('/api/analyze', upload, async (req, res) => {
     const imageH1 = { inlineData: { data: files['imageH1'][0].buffer.toString('base64'), mimeType: files['imageH1'][0].mimetype } };
     const imageM5 = { inlineData: { data: files['imageM5'][0].buffer.toString('base64'), mimeType: files['imageM5'][0].mimetype } };
 
-    const prompt = `
-      Kamu adalah analis trading SCALPING profesional. Gunakan strategi Top-Down Analysis.
-      Gambar 1: H1/H4 (Tren). Gambar 2: M5/M15 (Entry).
-      ATURAN KETAT: Jangan ambil BUY jika tren H1 turun, jangan ambil SELL jika tren H1 naik. SL tipis, TP realistis maksimal 1:1.5.
-      Jika tren bertolak belakang, berikan "NO_TRADE".
-      Berikan jawaban HANYA format JSON:
-      { "signal": "BUY"|"SELL"|"NO_TRADE", "pair": "BTCUSD", "timeframe": "H1 + M5", "entry": 0, "sl": 0, "tp1": 0, "tp2": 0, "confidence": 0, "reason": "", "warnings": [] }
-    `;
+    const prompt = `Kamu adalah analis trading SCALPING profesional. Gunakan strategi Top-Down Analysis. Gambar 1: H1/H4 (Tren). Gambar 2: M5/M15 (Entry). Berikan jawaban HANYA format JSON: { "signal": "BUY"|"SELL"|"NO_TRADE", "pair": "BTCUSD", "timeframe": "H1 + M5", "entry": 0, "sl": 0, "tp1": 0, "tp2": 0, "confidence": 0, "reason": "", "warnings": [] }`;
 
     const result = await model.generateContent([prompt, imageH1, imageM5]);
     const cleanJson = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
@@ -196,11 +171,7 @@ app.post('/api/analyze', upload, async (req, res) => {
     fs.writeFileSync(historyFilePath, JSON.stringify(history, null, 2));
 
     res.json({ ok: true, result: parsedData });
-  } catch (error) {
-    console.error('Error AI:', error);
-    res.status(500).json({ ok: false, error: 'AI_ERROR', message: 'Gagal menganalisis gambar' });
-  }
+  } catch (error) { res.status(500).json({ ok: false, error: 'AI_ERROR', message: 'Gagal menganalisis gambar' }); }
 });
 
-// --- EXPORT UNTUK VERCEL ---
 export default app;
